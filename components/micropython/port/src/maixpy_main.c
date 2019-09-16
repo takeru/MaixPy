@@ -125,6 +125,7 @@ STATIC bool init_sdcard_fs(void) {
         fs_user_mount_t *vfs_fat = m_new_obj_maybe(fs_user_mount_t);
         mp_vfs_mount_t *vfs = m_new_obj_maybe(mp_vfs_mount_t);
         if (vfs == NULL || vfs_fat == NULL) {
+			printk("init_sdcard_fs(part_num=%d): vfs=%x vfs_fat=%x\r\n", part_num, vfs, vfs_fat);
             break;
         }
         vfs_fat->flags = FSUSER_FREE_OBJ;
@@ -133,6 +134,7 @@ STATIC bool init_sdcard_fs(void) {
         // try to mount the partition
         FRESULT res = f_mount(&vfs_fat->fatfs);
         if (res != FR_OK) {
+			printk("init_sdcard_fs(part_num=%d): couldn't mount res=%d\r\n", part_num, res);
             // couldn't mount
             m_del_obj(fs_user_mount_t, vfs_fat);
             m_del_obj(mp_vfs_mount_t, vfs);
@@ -160,10 +162,12 @@ STATIC bool init_sdcard_fs(void) {
             for (mp_vfs_mount_t **m = &MP_STATE_VM(vfs_mount_table);; m = &(*m)->next) {
                 if (*m == NULL) {
                     *m = vfs;
+					printk("init_sdcard_fs(part_num=%d): *m == NULL\r\n", part_num);
                     break;
                 }
             }
             if (first_part) {
+				printk("init_sdcard_fs(part_num=%d): first_part\r\n", part_num);
                 // use SD card as current directory
                 MP_STATE_PORT(vfs_cur) = vfs;
 				first_part = false;
@@ -172,7 +176,7 @@ STATIC bool init_sdcard_fs(void) {
     }
 	
     if (first_part) {
-        printk("PYB: can't mount SD card\n");
+        printk("PYB: can't mount SD card\r\n");
         return false;
     } else {
         return true;
@@ -396,21 +400,35 @@ soft_reset:
 #else
 		MP_STATE_PORT(Maix_stdio_uart) = NULL;
 #endif
-		peripherals_init();
+		{
+		    bool result = peripherals_init();
+			printk("peripherals_init result=%d\r\n", result);
+			msleep(100);
+		}
+
 		// initialise peripherals
 		bool mounted_sdcard = false;
 		bool mounted_flash= false;
 		mounted_flash = mpy_mount_spiffs(&spiffs_user_mount_handle);//init spiffs of flash
-		sd_init();
-		if (sdcard_is_present()) {
+
+		{
+			uint8_t result = sd_init();
+			printk("sd_init result=%d\r\n", result);
+		}
+
+		bool _sdcard_is_present = sdcard_is_present();
+		printk("_sdcard_is_present=%d\r\n", _sdcard_is_present);
+		if (_sdcard_is_present) {
 			spiffs_stat  fno;
         // if there is a file in the flash called "SKIPSD", then we don't mount the SD card
 	        if (!mounted_flash || SPIFFS_stat(&spiffs_user_mount_handle.fs,"SKIPSD",&fno) != SPIFFS_OK){
 	            mounted_sdcard = init_sdcard_fs();
 	        }
-    	}
+		}
+		printk("mounted_sdcard=%d\r\n", mounted_sdcard);
 		if (mounted_sdcard) {
 		}
+
 		// mp_printf(&mp_plat_print, "[MaixPy] init end\r\n"); // for maixpy ide
 		// run boot-up scripts
 		mp_hal_set_interrupt_char(CHAR_CTRL_C);

@@ -11,7 +11,7 @@
 #include "utils.h"
 #include "global_config.h"
 
-#define MAIX_SDCARD_DEBUG 0
+#define MAIX_SDCARD_DEBUG 1
 #if MAIX_SDCARD_DEBUG==1
 #include "printf.h"
 #define debug_print(x,arg...) printk(x,##arg)
@@ -261,6 +261,7 @@ static uint8_t sd_get_csdregister(SD_CSD *SD_csd)
 	}
 	else if(1 == sd_version)
 	{
+		SD_csd->DeviceSize = 0;
 		SD_csd->DeviceSize |= (csd_tab[6] & 0x03) << 10;
 		/*!< Byte 7 */
 		SD_csd->DeviceSize |= csd_tab[7] << 2 ;
@@ -386,16 +387,27 @@ static uint8_t sd_get_cardinfo(SD_CardInfo *cardinfo)
 	}
 	if(2 == sd_version)
 	{
+		debug_print("cardinfo->SD_csd.RdBlockLen=%d\r\n", cardinfo->SD_csd.RdBlockLen);
+		debug_print("cardinfo->SD_csd.DeviceSize=%d\r\n", cardinfo->SD_csd.DeviceSize);
+
 		cardinfo->CardCapacity = (cardinfo->SD_csd.DeviceSize + 1) * 1024;
 		cardinfo->CardBlockSize = 1 << (cardinfo->SD_csd.RdBlockLen);
 		cardinfo->CardCapacity *= cardinfo->CardBlockSize;
 	}
 	else if(1 == sd_version)
 	{
+		// TOSHIBAの赤白でここの計算がおかしい。
+
+		debug_print("cardinfo->SD_csd.RdBlockLen=%d\r\n", cardinfo->SD_csd.RdBlockLen);
+		debug_print("cardinfo->SD_csd.DeviceSize=%d\r\n", cardinfo->SD_csd.DeviceSize);
+		debug_print("cardinfo->SD_csd.CSizeMlut =%d\r\n", cardinfo->SD_csd.CSizeMlut);
+
 		cardinfo->CardBlockSize = 1 << (cardinfo->SD_csd.RdBlockLen);
 		cardinfo->CardCapacity = (cardinfo->SD_csd.DeviceSize + 1) << (cardinfo->SD_csd.CSizeMlut + 2 
 																		+cardinfo->SD_csd.RdBlockLen);	
 	}
+	debug_print("cardinfo->CardBlockSize=%d\r\n", cardinfo->CardBlockSize);
+	debug_print("cardinfo->CardCapacity=%ld\r\n", cardinfo->CardCapacity);
 	/*!< Returns the reponse */
 	return 0;
 }
@@ -467,6 +479,7 @@ uint8_t sd_init(void)
 			return 0xFF;
 		}
 		sd_send_cmd(SD_ACMD41, 0x40000000, 0);
+		//sd_send_cmd(SD_ACMD41, 0x40FF8000, 0xFF);
 		result = sd_get_response();
 		sd_end_cmd();
 		if (result == 0x00)
@@ -480,6 +493,7 @@ uint8_t sd_init(void)
 	index = 255;
 	while(index--){
 		sd_send_cmd(SD_CMD58, 0, 1);
+		//sd_send_cmd(SD_CMD58, 0x00000000, 0xFF);
 		result = sd_get_response();
 		sd_read_data(frame, 4);
 		sd_end_cmd();
@@ -501,7 +515,9 @@ uint8_t sd_init(void)
 	}
 	if ((frame[0] & 0x40) == 0)
 	{
+		debug_print("frame[0]=%02X\r\n", frame[0]);
 		#if CONFIG_SPI_SD_CARD_FORCE_HIGH_SPEED
+			debug_print("CONFIG_SPI_SD_CARD_FORCE_HIGH_SPEED\r\n");
 			SD_HIGH_SPEED_ENABLE();
 		#endif
 		sd_version = 1;
@@ -511,6 +527,7 @@ uint8_t sd_init(void)
 		sd_version = 2;
 		SD_HIGH_SPEED_ENABLE();
 	}
+	debug_print("sd_version=%d\r\n", sd_version);
 	if(1 == sd_version)
 	{
 		sd_send_cmd(SD_CMD16, 512, 0);
